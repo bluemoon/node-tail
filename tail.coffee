@@ -3,7 +3,7 @@ fs = require 'fs'
 events = require 'events'
 
 class Tail extends events.EventEmitter
-  constructor: (@filename, @callback, @separator = '\n') ->
+  constructor: (@filename, @callback = null, @separator = '\n') ->
     @internalEmitter = new events.EventEmitter
     @queue = []
     @previousSize = 0
@@ -53,6 +53,7 @@ class Tail extends events.EventEmitter
           @buffer += data
           parts = @buffer.split(@separator)
           @buffer = parts.pop()
-          @callback(chunk) for chunk in parts
+          if @callback
+            @callback(chunk) for chunk in parts
 
 exports.Tail = Tail
