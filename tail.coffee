@@ -1,42 +1,58 @@
-events= require("events")
-fs =require('fs')
-
-environment = process.env['NODE_ENV'] || 'development'
+sys = require 'util'
+fs = require 'fs'
+events = require 'events'
 
 class Tail extends events.EventEmitter
+  constructor: (@filename, @callback, @separator = '\n') ->
+    @internalEmitter = new events.EventEmitter
+    @queue = []
+    @previousSize = 0
+    @size = 0
+    @buffer = ''
 
-  readBlock:()=>
+    @getSize()
+    @internalEmitter.on 'next',=>
+      @getBlock()
+
+    fs.watch @filename, (event, filename) =>
+      if @size > @previousSize
+        @queue.push {
+          start: @previousSize
+          end: @size
+        }
+        @internalEmitter.emit 'next' if @queue.length is 1
+        @getSize()
+        @previousSize = @size
+
+  unwatch:->
+    fs.unwatchFile @filename
+    @queue = []
+
+  getSize: ->
+    fs.stat @filename, (err, stat) =>
+      @size = stat.size
+
+  getBlock: =>
     if @queue.length >= 1
-      block=@queue[0]
+      block = @queue[0]
       if block.end > block.start
-        stream = fs.createReadStream(@filename, {start:block.start, end:block.end-1, encoding:"utf-8"})
-        stream.on 'error',(error) =>
+        stream = fs.createReadStream @filename,
+          start: block.start,
+          end: block.end-1,
+          encoding:"utf-8"
+
+        stream.on 'error', (error) =>
           console.log("Tail error:#{error}")
           @emit('error', error)
+
         stream.on 'end',=>
           @queue.shift()
-          @internalDispatcher.emit("next") if @queue.length >= 1
+          @internalEmitter.emit("next") if @queue.length >= 1
+
         stream.on 'data', (data) =>
           @buffer += data
           parts = @buffer.split(@separator)
           @buffer = parts.pop()
-          @emit("line", chunk) for chunk in parts
+          @callback(chunk) for chunk in parts
 
-  constructor:(@filename, @separator='\n') ->    
-    @buffer = ''
-    @internalDispatcher = new events.EventEmitter()
-    @queue = []
-             
-    @internalDispatcher.on 'next',=>
-      @readBlock()
-    
-    fs.watchFile @filename, (curr, prev) =>
-      if curr.size > prev.size
-        @queue.push({start:prev.size, end:curr.size})  
-        @internalDispatcher.emit("next") if @queue.length is 1
-    
-  unwatch:->
-    fs.unwatchFile @filename
-    @queue = []
-        
 exports.Tail = Tail
